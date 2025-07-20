@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Color Picker & Palette</title>
+<meta name="description" content="Pick any color on page or from a screenshot. View hex/rgb/hsl, build & export your palette.">
+<link href="https://fonts.googleapis.com/css?family=Inter:400,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#fafafa; --card:#fff; --text:#1f2937;
+    --primary:#2563eb; --primary-dark:#1e40af;
+    --accent:#10b981; --accent-dark:#0e7f60;
+    --danger:#e53e3e; --danger-dark:#9b2c2c;
+    --border:#e5e7eb; --radius:8px; --gap:1rem;
+    --max-w:900px;
+  }
+  *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+  body {
+    font-family:'Inter',sans-serif;
+    background:var(--bg); color:var(--text);
+    display:flex; flex-direction:column;
+    align-items:center; min-height:100vh;
+    padding:var(--gap);
+  }
+  header,footer{width:100%;max-width:var(--max-w);margin:auto;text-align:center;}
+  header{margin-bottom:var(--gap);}
+  h1{font-size:2rem;margin-bottom:.25rem;}
+  p{color:#555;font-size:.9rem;}
+  main{flex:1;width:100%;max-width:var(--max-w);margin:auto;}
+  .controls,.io{display:flex;flex-wrap:wrap;gap:var(--gap);margin-bottom:var(--gap);}
+  button,input[type="color"]{
+    font:inherit;border:none;border-radius:var(--radius);
+    padding:.5rem 1rem;cursor:pointer;transition:background .2s;
+  }
+  button.primary{background:var(--primary);color:#fff;}
+  button.primary:hover{background:var(--primary-dark);}
+  button.accent{background:var(--accent);color:#fff;}
+  button.accent:hover{background:var(--accent-dark);}
+  button.danger{background:var(--danger);color:#fff;}
+  button.danger:hover{background:var(--danger-dark);}
+  label{display:flex;align-items:center;gap:.5rem;font-size:.95rem;}
+  .card{
+    background:var(--card);border:1px solid var(--border);
+    border-radius:var(--radius);padding:var(--gap);margin-bottom:var(--gap);
+  }
+  h2{font-size:1.25rem;margin-bottom:.5rem;}
+  table{width:100%;border-collapse:collapse;}
+  th,td{border:1px solid var(--border);padding:.5rem;text-align:left;}
+  th{background:#f0f4ff;}
+  .swatch{
+    width:1.5rem;height:1.5rem;border:1px solid #ccc;
+    border-radius:var(--radius);
+  }
+  td input{
+    width:100%;border:none;background:transparent;
+    padding:.25rem;font:inherit;
+  }
+  td input:focus{background:#fff;border:1px solid var(--primary);}
+  td button{padding:.25rem .5rem;font-size:.9rem;}
+  .io input{display:none;}
+  /* overlay per Page/Screenshot Picker */
+  #overlayCanvas{
+    position:fixed;top:0;left:0;
+    width:100vw;height:100vh;
+    cursor:crosshair;z-index:9999;
+  }
+  @media print{.controls,.io,header,footer{display:none;}table{page-break-inside:avoid;}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Color Picker & Palette</h1>
+  <p>Pick any color on page or load a screenshot to pick external colors.</p>
+</header>
+
+<main>
+  <div class="controls">
+    <button id="btnEye" class="primary">EyeDropper Pick</button>
+    <button id="btnPage" class="primary">Page Picker</button>
+    <button id="btnScreenshot" class="primary">Screenshot Picker</button>
+    <label>Manual: <input type="color" id="inputManual"></label>
+    <input type="file" id="fileScreenshot" accept="image/png, image/jpeg">
+  </div>
+
+  <div class="card">
+    <h2>Selected Color</h2>
+    <div id="currentSwatch" style="width:2rem;height:2rem;
+         border:1px solid #ccc;border-radius:4px;margin-bottom:8px;"></div>
+    Hex: <code id="outHex">#—</code><br>
+    RGB: <code id="outRgb">rgb(—)</code><br>
+    HSL: <code id="outHsl">hsl(—)</code><br>
+    <button id="btnAdd" class="accent" disabled>Add to Palette</button>
+  </div>
+
+  <div class="card">
+    <h2>Your Palette</h2>
+    <div class="io">
+      <button id="btnExport" class="primary">Export JSON</button>
+      <button id="btnImport" class="primary">Import JSON</button>
+      <input type="file" id="fileImport" accept=".json">
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Swatch</th><th>Hex</th><th>RGB</th><th>HSL</th><th>Copy</th><th>Del</th>
+        </tr>
+      </thead>
+      <tbody id="paletteBody"></tbody>
+    </table>
+  </div>
+</main>
+
+<footer>
+  © 2025 Bocaletto Luca — <a href="#" target="_blank">GitHub Repo</a>
+</footer>
+
+<!-- html2canvas per Page Picker -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+  const btnEye   = document.getElementById('btnEye');
+  const btnPage  = document.getElementById('btnPage');
+  const btnShot  = document.getElementById('btnScreenshot');
+  const inputMan = document.getElementById('inputManual');
+  const fileShot = document.getElementById('fileScreenshot');
+  const swatch   = document.getElementById('currentSwatch');
+  const outHex   = document.getElementById('outHex');
+  const outRgb   = document.getElementById('outRgb');
+  const outHsl   = document.getElementById('outHsl');
+  const btnAdd   = document.getElementById('btnAdd');
+  const btnExp   = document.getElementById('btnExport');
+  const btnImp   = document.getElementById('btnImport');
+  const fileImp  = document.getElementById('fileImport');
+  const body     = document.body;
+  const paletteBody = document.getElementById('paletteBody');
+
+  let currentColor=null;
+  let palette=JSON.parse(localStorage.getItem('palette')||'[]');
+
+  function hexToRgb(hex){
+    const [r,g,b]=hex.slice(1).match(/.{2}/g).map(x=>parseInt(x,16));
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+  function rgbToHsl(r,g,b){
+    r/=255;g/=255;b/=255;
+    const max=Math.max(r,g,b),min=Math.min(r,g,b);
+    let h=0,s=0,l=(max+min)/2;
+    if(max!==min){
+      const d=max-min;
+      s=l>0.5? d/(2-max-min): d/(max+min);
+      switch(max){
+        case r: h=(g-b)/d + (g<b?6:0);break;
+        case g: h=(b-r)/d + 2;break;
+        default:h=(r-g)/d + 4;
+      }
+      h/=6;
+    }
+    return `hsl(${Math.round(h*360)},${Math.round(s*100)}%,${Math.round(l*100)}%)`;
+  }
+  function updateUI(hex){
+    currentColor=hex.toUpperCase();
+    swatch.style.background=currentColor;
+    outHex.textContent=currentColor;
+    const rgb=hexToRgb(currentColor);
+    outRgb.textContent=rgb;
+    const [r,g,b]=rgb.match(/\d+/g).map(Number);
+    outHsl.textContent=rgbToHsl(r,g,b);
+    btnAdd.disabled=false;
+  }
+
+  // EyeDropper (solo su Chrome/Edge)
+  if(window.EyeDropper){
+    btnEye.onclick=async()=>{
+      try{
+        const {sRGBHex}=await new EyeDropper().open();
+        updateUI(sRGBHex);
+      }catch{}
+    };
+  }else btnEye.disabled=true;
+
+  // Manual
+  inputMan.oninput=()=>updateUI(inputMan.value);
+
+  // Page Picker
+  btnPage.onclick=()=>{
+    html2canvas(document.body).then(canvas=>{
+      canvas.id='overlayCanvas';
+      body.append(canvas);
+      const ctx=canvas.getContext('2d');
+      const onMove=e=>{
+        const rect=canvas.getBoundingClientRect();
+        const x=((e.clientX-rect.left)*(canvas.width/rect.width))|0;
+        const y=((e.clientY-rect.top)*(canvas.height/rect.height))|0;
+        const [r,g,b]=ctx.getImageData(x,y,1,1).data;
+        swatch.style.background='#'+((1<<24)|(r<<16)|(g<<8)|b)
+          .toString(16).slice(1).toUpperCase();
+      };
+      const onClick=e=>{
+        const rect=canvas.getBoundingClientRect();
+        const x=((e.clientX-rect.left)*(canvas.width/rect.width))|0;
+        const y=((e.clientY-rect.top)*(canvas.height/rect.height))|0;
+        const [r,g,b]=ctx.getImageData(x,y,1,1).data;
+        const hex='#'+((1<<24)|(r<<16)|(g<<8)|b)
+          .toString(16).slice(1).toUpperCase();
+        updateUI(hex);
+        canvas.removeEventListener('mousemove',onMove);
+        canvas.removeEventListener('click',onClick);
+        body.removeChild(canvas);
+      };
+      canvas.addEventListener('mousemove',onMove);
+      canvas.addEventListener('click',onClick);
+    });
+  };
+
+  // Screenshot Picker
+  btnShot.onclick=()=>fileShot.click();
+  fileShot.onchange=e=>{
+    const f=e.target.files[0];
+    if(!f)return;
+    const img=new Image();
+    const url=URL.createObjectURL(f);
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      canvas.id='overlayCanvas';
+      canvas.width=img.naturalWidth;
+      canvas.height=img.naturalHeight;
+      canvas.style.position='fixed';
+      canvas.style.top='0';
+      canvas.style.left='0';
+      canvas.style.width='100vw';
+      canvas.style.height='100vh';
+      body.append(canvas);
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      URL.revokeObjectURL(url);
+
+      const onMove=e=>{
+        const rect=canvas.getBoundingClientRect();
+        const x=((e.clientX-rect.left)*(canvas.width/rect.width))|0;
+        const y=((e.clientY-rect.top)*(canvas.height/rect.height))|0;
+        const [r,g,b]=ctx.getImageData(x,y,1,1).data;
+        swatch.style.background='#'+((1<<24)|(r<<16)|(g<<8)|b)
+          .toString(16).slice(1).toUpperCase();
+      };
+      const onClick=e=>{
+        const rect=canvas.getBoundingClientRect();
+        const x=((e.clientX-rect.left)*(canvas.width/rect.width))|0;
+        const y=((e.clientY-rect.top)*(canvas.height/rect.height))|0;
+        const [r,g,b]=ctx.getImageData(x,y,1,1).data;
+        const hex='#'+((1<<24)|(r<<16)|(g<<8)|b)
+          .toString(16).slice(1).toUpperCase();
+        updateUI(hex);
+        canvas.removeEventListener('mousemove',onMove);
+        canvas.removeEventListener('click',onClick);
+        body.removeChild(canvas);
+      };
+      canvas.addEventListener('mousemove',onMove);
+      canvas.addEventListener('click',onClick);
+    };
+    img.src=url;
+  };
+
+  // Palette CRUD
+  btnAdd.onclick=()=>{
+    palette.push({
+      hex:currentColor,
+      rgb:hexToRgb(currentColor),
+      hsl:outHsl.textContent
+    });
+    saveAndRender();
+  };
+  function renderPalette(){
+    paletteBody.innerHTML='';
+    palette.forEach((c,i)=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
+        <td><div class="swatch" style="background:${c.hex}"></div></td>
+        <td><input data-field="hex" value="${c.hex}"></td>
+        <td><input data-field="rgb" value="${c.rgb}"></td>
+        <td><input data-field="hsl" value="${c.hsl}"></td>
+        <td><button class="copy accent">Copy</button></td>
+        <td><button class="del danger">Del</button></td>
+      `;
+      tr.querySelectorAll('input').forEach(inp=>{
+        inp.onchange=()=>{
+          c[inp.dataset.field]=inp.value.trim();
+          saveAndRender();
+        };
+      });
+      tr.querySelector('.copy').onclick=()=>navigator.clipboard.writeText(c.hex);
+      tr.querySelector('.del').onclick=()=>{
+        palette.splice(i,1); saveAndRender();
+      };
+      paletteBody.append(tr);
+    });
+  }
+  function saveAndRender(){
+    localStorage.setItem('palette',JSON.stringify(palette));
+    renderPalette();
+  }
+
+  // Import/Export
+  btnExp.onclick=()=>{
+    const blob=new Blob([JSON.stringify(palette,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url; a.download='palette.json'; a.click();
+    URL.revokeObjectURL(url);
+  };
+  btnImp.onclick=()=>fileImp.click();
+  fileImp.onchange=e=>{
+    const f=e.target.files[0]; if(!f)return;
+    const r=new FileReader();
+    r.onload=()=>{try{palette=JSON.parse(r.result);saveAndRender();}catch{alert('Invalid JSON');}};
+    r.readAsText(f);
+  };
+
+  saveAndRender();
+});
+</script>
+</body>
+</html>
